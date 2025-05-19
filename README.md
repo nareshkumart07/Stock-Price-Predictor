@@ -1,4 +1,4 @@
-# 📈 Stock Price Predictor (NSE) using LSTM/GRU
+# 📈 Stock Price Predictor (NSE) using LSTM
 
 This project is a deep learning-based stock price prediction system that forecasts **next-day Open, High, Low, Close, and Volume** for any **NSE-listed stock** using historical data from Yahoo Finance.
 
