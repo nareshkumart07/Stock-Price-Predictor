@@ -37,30 +37,45 @@ class StockPriceLSTM(nn.Module):
         return out
 
 # --- Caching Data & Model Functions ---
-# Cache data loading to avoid re-downloading on every interaction.
+# Cache data and info loading to avoid re-downloading on every interaction.
 @st.cache_data(ttl="1d")
-def load_data(ticker):
+def load_data_and_info(ticker):
     """
-    Loads historical stock data for the given ticker.
-    Returns the full DataFrame and the last 60 days for prediction.
+    Loads historical stock data and company info for the given ticker.
+    Returns dataframes, a dictionary of company info, and an error message if applicable.
     """
     try:
-        # Fetch 5 years of data to ensure enough history for training
-        data = yf.download(ticker, period='5y')[['Open', 'High', 'Low', 'Close', 'Volume']]
+        ticker_obj = yf.Ticker(ticker)
+        
+        # Fetch company info
+        info = ticker_obj.info
+        if not info or info.get('regularMarketPrice') is None: # Check if the ticker is valid
+             return None, None, None, f"Invalid or delisted ticker: {ticker}. Please try another."
+
+        company_profile = {
+            "name": info.get('longName', 'N/A'),
+            "sector": info.get('sector', 'N/A'),
+            "logo": info.get('logo_url', '')
+        }
+        
+        # Fetch 5 years of data using the Ticker object
+        data = ticker_obj.history(period='5y')[['Open', 'High', 'Low', 'Close', 'Volume']]
         data.dropna(inplace=True)
+        
         if len(data) < 60:
-            return None, None, "Insufficient data (less than 60 days)."
+            return None, None, None, f"Insufficient data for {ticker} (less than 60 days required)."
         
         last_60_days_df = data.tail(60)
-        return data, last_60_days_df, None
+        
+        return data, last_60_days_df, company_profile, None
     except Exception as e:
-        return None, None, f"Error fetching data: {e}"
+        return None, None, None, f"An error occurred while fetching data for {ticker}: {e}"
 
 # Cache the trained model to avoid retraining for the same ticker.
 @st.cache_resource
 def get_trained_model(ticker, data):
     """
-    Preprocesses data and trains the LSTM model for a given ticker.
+    Preprocesses data and trains the LSTM model.
     Returns the trained model and the scaler object.
     """
     scaler = MinMaxScaler()
@@ -112,73 +127,67 @@ if predict_button:
         st.warning("Please enter a stock ticker.")
     else:
         with st.spinner(f"Analyzing {ticker_input}... This may take a moment."):
-            # 1. Load Data
-            stock_data, last_60_days, error = load_data(ticker_input)
+            try:
+                # 1. Load Data and Info
+                stock_data, last_60_days, company_profile, error = load_data_and_info(ticker_input)
 
-            if error:
-                st.error(error)
-            else:
-                # 2. Get Company Info
-                try:
-                    info = yf.Ticker(ticker_input).info
-                    company_name = info.get('longName', 'N/A')
-                    sector = info.get('sector', 'N/A')
-                    logo_url = info.get('logo_url', '')
-                except Exception:
-                    company_name, sector, logo_url = 'N/A', 'N/A', ''
+                if error:
+                    st.error(error)
+                else:
+                    # 2. Train Model
+                    model, scaler = get_trained_model(ticker_input, stock_data)
 
-                # 3. Train Model
-                model, scaler = get_trained_model(ticker_input, stock_data)
+                    # 3. Make Prediction
+                    last_60_days_scaled = scaler.transform(last_60_days)
+                    input_tensor = torch.tensor(last_60_days_scaled, dtype=torch.float32).unsqueeze(0)
+                    
+                    model.eval()
+                    with torch.no_grad():
+                        predicted_scaled = model(input_tensor)
+                        prediction_original = scaler.inverse_transform(predicted_scaled.numpy())
 
-                # 4. Make Prediction
-                last_60_days_scaled = scaler.transform(last_60_days)
-                input_tensor = torch.tensor(last_60_days_scaled, dtype=torch.float32).unsqueeze(0)
-                
-                model.eval()
-                with torch.no_grad():
-                    predicted_scaled = model(input_tensor)
-                    prediction_original = scaler.inverse_transform(predicted_scaled.numpy())
+                    prediction = prediction_original[0]
+                    last_close = stock_data['Close'].iloc[-1]
+                    trend = "Up" if prediction[3] > last_close else "Down"
+                    trend_icon = "🔼" if trend == "Up" else "🔽"
 
-                prediction = prediction_original[0]
-                last_close = stock_data['Close'].iloc[-1]
-                trend = "Up" if prediction[3] > last_close else "Down"
-                trend_icon = "🔼" if trend == "Up" else "🔽"
+                    # --- Display Results ---
+                    st.header(f"Analysis for {company_profile['name']} ({ticker_input})")
+                    
+                    col1, col2 = st.columns([1, 4])
+                    with col1:
+                        if company_profile['logo']:
+                            st.image(company_profile['logo'], width=100)
+                    with col2:
+                        st.metric(label="**Predicted Close Price**", value=f"${prediction[3]:,.2f}", delta=f"{prediction[3] - last_close:,.2f} ({trend}) {trend_icon}")
+                        st.write(f"**Sector:** {company_profile['sector']}")
+                    
+                    st.subheader("Next Day's Predicted Values")
+                    cols = st.columns(4)
+                    cols[0].metric("Open", f"${prediction[0]:,.2f}")
+                    cols[1].metric("High", f"${prediction[1]:,.2f}")
+                    cols[2].metric("Low", f"${prediction[2]:,.2f}")
+                    cols[3].metric("Volume", f"{prediction[4]:,.0f}")
+                    
+                    # Display Interactive Chart
+                    st.subheader("Historical Price Chart (Last 5 Years)")
+                    fig = go.Figure()
+                    fig.add_trace(go.Scatter(x=stock_data.index, y=stock_data['Close'], mode='lines', name='Close Price'))
+                    fig.update_layout(
+                        title=f'{ticker_input} Closing Price History',
+                        xaxis_title='Date',
+                        yaxis_title='Price (USD)',
+                        xaxis_rangeslider_visible=True,
+                        template='plotly_dark'
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
 
-                # --- Display Results ---
-                st.header(f"Analysis for {company_name} ({ticker_input})")
-                
-                # Display Company Info & Prediction Metrics
-                col1, col2, col3 = st.columns([1, 4, 2])
-                with col1:
-                    if logo_url:
-                        st.image(logo_url, width=100)
-                with col2:
-                    st.metric(label="**Predicted Close Price**", value=f"${prediction[3]:,.2f}", delta=f"{prediction[3] - last_close:,.2f} ({trend}) {trend_icon}")
-                    st.write(f"**Sector:** {sector}")
-                
-                st.subheader("Next Day's Predicted Values")
-                cols = st.columns(4)
-                cols[0].metric("Open", f"${prediction[0]:,.2f}")
-                cols[1].metric("High", f"${prediction[1]:,.2f}")
-                cols[2].metric("Low", f"${prediction[2]:,.2f}")
-                cols[3].metric("Volume", f"{prediction[4]:,.0f}")
-                
-                # Display Interactive Chart
-                st.subheader("Historical Price Chart (Last 5 Years)")
-                fig = go.Figure()
-                fig.add_trace(go.Scatter(x=stock_data.index, y=stock_data['Close'], mode='lines', name='Close Price'))
-                fig.update_layout(
-                    title=f'{ticker_input} Closing Price History',
-                    xaxis_title='Date',
-                    yaxis_title='Price (USD)',
-                    xaxis_rangeslider_visible=True,
-                    template='plotly_dark'
-                )
-                st.plotly_chart(fig, use_container_width=True)
+                    # Display Recent Data Table
+                    with st.expander("View Recent Historical Data"):
+                        st.dataframe(stock_data.tail(10).style.format("{:,.2f}"))
 
-                # Display Recent Data Table
-                with st.expander("View Recent Historical Data"):
-                    st.dataframe(stock_data.tail(10).style.format("{:,.2f}"))
-
+            except Exception as e:
+                st.error(f"An unexpected error occurred: {e}")
 else:
     st.info("Enter a stock ticker in the sidebar and click 'Predict Next Day' to begin.")
+
