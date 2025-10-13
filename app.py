@@ -58,8 +58,8 @@ def load_data_and_info(ticker):
             "logo": info.get('logo_url', '')
         }
         
-        # Fetch 5 years of data using the Ticker object
-        data = ticker_obj.history(period='5y')[['Open', 'High', 'Low', 'Close', 'Volume']]
+        # Fetch max available data using the Ticker object
+        data = ticker_obj.history(period='max')[['Open', 'High', 'Low', 'Close', 'Volume']]
         data.dropna(inplace=True)
         
         if len(data) < 60:
@@ -117,6 +117,20 @@ st.markdown("This tool uses Artificial Intelligence to guess the next day's stoc
 with st.sidebar:
     st.header("Settings")
     ticker_input = st.text_input("Enter a Company's Stock Symbol", "AAPL").upper()
+    
+    st.subheader("Chart Options")
+    timeframe = st.radio(
+        "Select Timeframe",
+        ('1M', '6M', '1Y', '5Y', 'Max'),
+        index=2, # Default to 1Y
+        horizontal=True
+    )
+    chart_type = st.radio(
+        "Select Chart Type",
+        ('Line', 'Candlestick'),
+        horizontal=True
+    )
+
     predict_button = st.button("Forecast Next Day's Price", type="primary")
     st.markdown("---")
     st.info("Disclaimer: This is just for fun and learning. Please don't use it to make real investment choices.")
@@ -169,12 +183,40 @@ if predict_button:
                     cols[2].metric("Low", f"${prediction[2]:,.2f}")
                     cols[3].metric("Volume", f"{prediction[4]:,.0f}")
                     
-                    # Display Interactive Chart
-                    st.subheader("Price History (Last 5 Years)")
+                    # --- Display Interactive Chart ---
+                    st.subheader(f"Price History ({timeframe})")
+                    
+                    # Filter data based on selected timeframe
+                    end_date = stock_data.index.max()
+                    if timeframe == '1M':
+                        start_date = end_date - pd.DateOffset(months=1)
+                    elif timeframe == '6M':
+                        start_date = end_date - pd.DateOffset(months=6)
+                    elif timeframe == '1Y':
+                        start_date = end_date - pd.DateOffset(years=1)
+                    elif timeframe == '5Y':
+                        start_date = end_date - pd.DateOffset(years=5)
+                    else: # Max
+                        start_date = stock_data.index.min()
+                    
+                    chart_data = stock_data[start_date:end_date]
+                    
                     fig = go.Figure()
-                    fig.add_trace(go.Scatter(x=stock_data.index, y=stock_data['Close'], mode='lines', name='Close Price'))
+
+                    if chart_type == 'Line':
+                        fig.add_trace(go.Scatter(x=chart_data.index, y=chart_data['Close'], mode='lines', name='Close Price'))
+                        title_text = f"How {ticker_input}'s Price Trended Over Time"
+                    else: # Candlestick
+                        fig.add_trace(go.Candlestick(x=chart_data.index,
+                                        open=chart_data['Open'],
+                                        high=chart_data['High'],
+                                        low=chart_data['Low'],
+                                        close=chart_data['Close'],
+                                        name='Price'))
+                        title_text = f"{ticker_input}'s Price Chart"
+                    
                     fig.update_layout(
-                        title=f"How {ticker_input}'s Price Changed Over Time",
+                        title=title_text,
                         xaxis_title='Date',
                         yaxis_title='Price (USD)',
                         xaxis_rangeslider_visible=True,
