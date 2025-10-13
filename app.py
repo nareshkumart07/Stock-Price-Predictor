@@ -183,3 +183,4 @@ if st.button("Predict Next Day's Prices"):
 
         else:
             st.warning("Could not process data for the given ticker. Please ensure it's a valid ticker and sufficient data is available.")
+
