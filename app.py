@@ -10,7 +10,7 @@ import plotly.graph_objects as go
 
 # --- Page Configuration ---
 st.set_page_config(
-    page_title="AI Stock Predictor Pro",
+    page_title="AI Stock Forecaster",
     page_icon="💹",
     layout="wide"
 )
@@ -50,7 +50,7 @@ def load_data_and_info(ticker):
         # Fetch company info
         info = ticker_obj.info
         if not info or info.get('regularMarketPrice') is None: # Check if the ticker is valid
-             return None, None, None, f"Invalid or delisted ticker: {ticker}. Please try another."
+             return None, None, None, f"Could not find the stock symbol: {ticker}. Please check if it's correct."
 
         company_profile = {
             "name": info.get('longName', 'N/A'),
@@ -63,19 +63,19 @@ def load_data_and_info(ticker):
         data.dropna(inplace=True)
         
         if len(data) < 60:
-            return None, None, None, f"Insufficient data for {ticker} (less than 60 days required)."
+            return None, None, None, f"Not enough past information for {ticker} to make a good guess."
         
         last_60_days_df = data.tail(60)
         
         return data, last_60_days_df, company_profile, None
     except Exception as e:
-        return None, None, None, f"An error occurred while fetching data for {ticker}: {e}"
+        return None, None, None, f"Something went wrong when trying to get information for {ticker}."
 
 # Cache the trained model to avoid retraining for the same ticker.
 @st.cache_resource
 def get_trained_model(ticker, data):
     """
-    Preprocesses data and trains the LSTM model.
+    Preprocesses data and trains the AI model.
     Returns the trained model and the scaler object.
     """
     scaler = MinMaxScaler()
@@ -97,7 +97,7 @@ def get_trained_model(ticker, data):
     dataset = TensorDataset(X_tensor, y_tensor)
     loader = DataLoader(dataset, batch_size=32, shuffle=True)
 
-    epochs = 20  # Increased epochs for potentially better accuracy
+    epochs = 20
     model.train()
     for epoch in range(epochs):
         for batch_X, batch_y in loader:
@@ -110,23 +110,23 @@ def get_trained_model(ticker, data):
     return model, scaler
 
 # --- UI and Main Application Logic ---
-st.title("💹 AI Stock Predictor Pro")
-st.markdown("An advanced tool using LSTM neural networks to forecast the next day's stock values.")
+st.title("💹 AI Stock Price Forecaster")
+st.markdown("This tool uses Artificial Intelligence to guess the next day's stock prices.")
 
 # --- Sidebar for User Inputs ---
 with st.sidebar:
-    st.header("Control Panel")
-    ticker_input = st.text_input("Enter Stock Ticker", "AAPL").upper()
-    predict_button = st.button("Predict Next Day", type="primary")
+    st.header("Settings")
+    ticker_input = st.text_input("Enter a Company's Stock Symbol", "AAPL").upper()
+    predict_button = st.button("Forecast Next Day's Price", type="primary")
     st.markdown("---")
-    st.info("Disclaimer: This is a demo for educational purposes and should not be used for financial decisions.")
+    st.info("Disclaimer: This is just for fun and learning. Please don't use it to make real investment choices.")
 
 # --- Main Content Area ---
 if predict_button:
     if not ticker_input:
-        st.warning("Please enter a stock ticker.")
+        st.warning("Please enter a stock symbol.")
     else:
-        with st.spinner(f"Analyzing {ticker_input}... This may take a moment."):
+        with st.spinner(f"Thinking about {ticker_input}... This might take a moment."):
             try:
                 # 1. Load Data and Info
                 stock_data, last_60_days, company_profile, error = load_data_and_info(ticker_input)
@@ -152,17 +152,17 @@ if predict_button:
                     trend_icon = "🔼" if trend == "Up" else "🔽"
 
                     # --- Display Results ---
-                    st.header(f"Analysis for {company_profile['name']} ({ticker_input})")
+                    st.header(f"Forecast for {company_profile['name']} ({ticker_input})")
                     
                     col1, col2 = st.columns([1, 4])
                     with col1:
                         if company_profile['logo']:
                             st.image(company_profile['logo'], width=100)
                     with col2:
-                        st.metric(label="**Predicted Close Price**", value=f"${prediction[3]:,.2f}", delta=f"{prediction[3] - last_close:,.2f} ({trend}) {trend_icon}")
-                        st.write(f"**Sector:** {company_profile['sector']}")
+                        st.metric(label="**Estimated Closing Price**", value=f"${prediction[3]:,.2f}", delta=f"{prediction[3] - last_close:,.2f} ({trend}) {trend_icon}")
+                        st.write(f"**Business Sector:** {company_profile['sector']}")
                     
-                    st.subheader("Next Day's Predicted Values")
+                    st.subheader("Tomorrow's Price Estimates")
                     cols = st.columns(4)
                     cols[0].metric("Open", f"${prediction[0]:,.2f}")
                     cols[1].metric("High", f"${prediction[1]:,.2f}")
@@ -170,11 +170,11 @@ if predict_button:
                     cols[3].metric("Volume", f"{prediction[4]:,.0f}")
                     
                     # Display Interactive Chart
-                    st.subheader("Historical Price Chart (Last 5 Years)")
+                    st.subheader("Price History (Last 5 Years)")
                     fig = go.Figure()
                     fig.add_trace(go.Scatter(x=stock_data.index, y=stock_data['Close'], mode='lines', name='Close Price'))
                     fig.update_layout(
-                        title=f'{ticker_input} Closing Price History',
+                        title=f"How {ticker_input}'s Price Changed Over Time",
                         xaxis_title='Date',
                         yaxis_title='Price (USD)',
                         xaxis_rangeslider_visible=True,
@@ -183,11 +183,11 @@ if predict_button:
                     st.plotly_chart(fig, use_container_width=True)
 
                     # Display Recent Data Table
-                    with st.expander("View Recent Historical Data"):
+                    with st.expander("See the Last 10 Days of Data"):
                         st.dataframe(stock_data.tail(10).style.format("{:,.2f}"))
 
             except Exception as e:
-                st.error(f"An unexpected error occurred: {e}")
+                st.error("Sorry, something unexpected happened. Please try again.")
 else:
-    st.info("Enter a stock ticker in the sidebar and click 'Predict Next Day' to begin.")
+    st.info("Enter a company's stock symbol in the settings panel on the left and click 'Forecast Next Day's Price' to start.")
 
