@@ -1,8 +1,8 @@
-torch
-pandas
-numpy
-scikit-learn
-matplotlib
-yfinance
-streamlit  # optional for UI
-plotly
+streamlit==1.35.0
+torch==2.2.2
+numpy==1.26.4
+pandas==2.2.2
+scikit-learn==1.5.1
+yfinance==0.2.40
+plotly==5.22.0
+pytest==8.2.2
