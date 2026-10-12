@@ -1,11 +1,11 @@
 # AI Stock Forecaster
 
-A modular and interview-ready machine learning project that predicts next-day stock values using an LSTM model trained on historical OHLCV data.
+An educational Streamlit application for exploring next-day stock forecasts using a PyTorch LSTM trained on historical OHLCV data. Evaluation compares the model with a last-observed-close baseline; forecasts are not investment advice.
 
-## Why This Project Stands Out
+## Features
 - Professional multi-file architecture (separation of concerns).
 - Reproducible training (`random_seed` controlled in config).
-- Proper time-series split (train/validation/test in chronological order).
+- Chronological train/validation/test targets, with preprocessing fitted only on training observations.
 - Objective evaluation using MAE, RMSE, MAPE, and a naive baseline.
 - Model artifact persistence (`save/load`) for faster demos.
 - Yahoo rate-limit handling (retry/backoff + local market-data cache fallback).
@@ -16,17 +16,13 @@ A modular and interview-ready machine learning project that predicts next-day st
 ## Project Structure
 
 ```text
-Model/
+Stock-Price-Predictor/
 ├── app.py
 ├── requirements.txt
 ├── README.md
 ├── Dockerfile
 ├── .gitignore
 ├── artifacts/                      # Auto-generated saved model artifacts
-├── screenshots/
-│   ├── home.svg
-│   ├── forecast.svg
-│   └── chart.svg
 ├── tests/
 │   ├── test_chart_service.py
 │   ├── test_forecast_service.py
@@ -45,19 +41,6 @@ Model/
     └── ui.py
 ```
 
-## Screenshots
-
-> Current images are placeholders. Replace them with real screenshots from your running app before final submission.
-
-### Home / Controls Panel
-![Home](screenshots/home.svg)
-
-### Forecast Output
-![Forecast](screenshots/forecast.svg)
-
-### Price Chart View
-![Chart](screenshots/chart.svg)
-
 ## Tech Stack
 - Python 3.9+
 - Streamlit
@@ -69,9 +52,9 @@ Model/
 
 ## Methodology
 1. Fetch historical market data (`Open`, `High`, `Low`, `Close`, `Volume`) from Yahoo Finance.
-2. Scale data using `MinMaxScaler`.
-3. Build rolling windows (60 timesteps by default).
-4. Split time-series data chronologically into train/validation/test.
+2. Define chronological training, validation, and test boundaries over prediction targets.
+3. Fit `MinMaxScaler` only on training-period observations, including the last training target, then transform the complete history without refitting or clipping.
+4. Build rolling windows (60 timesteps by default) and split them at those boundaries. Held-out windows can use earlier observed prices as context; future targets do not affect preprocessing.
 5. Train the LSTM model on the training split.
 6. Evaluate on test split with:
    - MAE (Model vs Baseline)
@@ -94,11 +77,13 @@ Naive baseline = "next close equals last observed close".
 This gives a meaningful benchmark so the LSTM result is measurable, not just visual.
 
 ## Reproducibility
-- `random_seed` is fixed in [config.py](/Users/fudode/Fudode_Models/Model/stock_forecaster/config.py).
+- `random_seed` is fixed in [config.py](stock_forecaster/config.py).
 - Artifact path is deterministic per ticker.
 - Run configuration and final training/validation losses are stored with artifacts.
+- Legacy artifacts created before train-only scaling are rejected and retrained automatically.
+- Historical accuracy is not a promise of future performance. Report the ticker, date range, split sizes, and model-versus-baseline metrics when sharing an evaluation.
 
-## Project Story (For Viva/Interview)
+## Project Background
 ### Problem
 Retail users often want a simple educational tool to explore short-term stock movement patterns.
 
@@ -121,7 +106,8 @@ The app produces next-day OHLCV forecasts, shows benchmark metrics (Model vs Bas
 ## Local Setup
 
 ```bash
-cd /Users/fudode/Fudode_Models/Model
+git clone https://github.com/nareshkumart07/Stock-Price-Predictor.git
+cd Stock-Price-Predictor
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
@@ -143,17 +129,12 @@ python -m pytest -q
 ## Docker Run
 
 ```bash
-cd /Users/fudode/Fudode_Models/Model
+# From the repository root
 docker build -t ai-stock-forecaster .
 docker run --rm -p 8501:8501 ai-stock-forecaster
 ```
 
 Then open: `http://localhost:8501`
-
-## Submission Tips (College / Interview)
-- Add your name, roll number, and course details at top.
-- Replace placeholder screenshots with real app captures.
-- Prepare a 2-minute walkthrough: problem, architecture, evaluation, limitations.
 
 ## Disclaimer
 For educational and demonstration use only.

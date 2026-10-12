@@ -1,10 +1,18 @@
 import numpy as np
+import torch
 from sklearn.preprocessing import MinMaxScaler
 
 from stock_forecaster.config import ModelConfig
 from stock_forecaster.model_store import load_artifact, save_artifact
 from stock_forecaster.schemas import EvaluationSummary, RegressionMetrics
 from stock_forecaster.training_service import build_model
+
+
+def test_legacy_artifact_requires_retraining(tmp_path):
+    config = ModelConfig(artifacts_dir=str(tmp_path))
+    # Old artifacts may have scalers/evaluations fitted on held-out observations.
+    torch.save({"ticker": "TEST"}, tmp_path / "TEST_lstm.pt")
+    assert load_artifact("TEST", config) is None
 
 
 def test_model_store_save_and_load_roundtrip(tmp_path):

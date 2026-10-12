@@ -39,7 +39,22 @@ def create_training_sequences(
 def split_time_series_sequences(
     features: np.ndarray, targets: np.ndarray, train_ratio: float, val_ratio: float
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    total = len(features)
+    train_end, val_end = _time_series_split_boundaries(
+        len(features), train_ratio, val_ratio
+    )
+
+    X_train, y_train = features[:train_end], targets[:train_end]
+    X_val, y_val = features[train_end:val_end], targets[train_end:val_end]
+    X_test, y_test = features[val_end:], targets[val_end:]
+
+    return X_train, y_train, X_val, y_val, X_test, y_test
+
+
+def _time_series_split_boundaries(
+    total: int, train_ratio: float, val_ratio: float
+) -> Tuple[int, int]:
+    if not 0 < train_ratio < 1 or not 0 < val_ratio < 1 or train_ratio + val_ratio >= 1:
+        raise ValueError("Train and validation ratios must leave a non-empty test split.")
     if total < 3:
         raise ValueError("Not enough sequence samples for train/validation/test split.")
 
@@ -51,14 +66,27 @@ def split_time_series_sequences(
     if train_end >= val_end:
         train_end = max(1, val_end - 1)
 
-    X_train, y_train = features[:train_end], targets[:train_end]
-    X_val, y_val = features[train_end:val_end], targets[train_end:val_end]
-    X_test, y_test = features[val_end:], targets[val_end:]
+    return train_end, val_end
 
-    if len(X_val) == 0 or len(X_test) == 0:
-        raise ValueError("Split produced empty validation/test set; use more historical data.")
 
-    return X_train, y_train, X_val, y_val, X_test, y_test
+def scale_training_data(
+    data: pd.DataFrame, config: ModelConfig
+) -> Tuple[MinMaxScaler, np.ndarray]:
+    """Fit on training observations only, including the last training target.
+
+    Validation/test windows may use earlier observations as context, but their
+    targets never influence fitted preprocessing. Held-out values can exceed
+    [0, 1]; clipping them would hide genuine changes in the market distribution.
+    """
+    if config.sequence_length < 1:
+        raise ValueError("Sequence length must be positive.")
+    train_end, _ = _time_series_split_boundaries(
+        len(data) - config.sequence_length, config.train_ratio, config.val_ratio
+    )
+    train_observation_end = config.sequence_length + train_end
+    scaler = MinMaxScaler()
+    scaler.fit(data.iloc[:train_observation_end])
+    return scaler, scaler.transform(data)
 
 
 def build_model(config: ModelConfig) -> StockPriceLSTM:
@@ -118,8 +146,7 @@ def train_model(
 ) -> Tuple[StockPriceLSTM, MinMaxScaler, EvaluationSummary, Dict[str, float]]:
     set_random_seed(config.random_seed)
 
-    scaler = MinMaxScaler()
-    scaled_data = scaler.fit_transform(data)
+    scaler, scaled_data = scale_training_data(data, config)
 
     X, y = create_training_sequences(scaled_data, config.sequence_length)
     X_train, y_train, X_val, y_val, X_test, y_test = split_time_series_sequences(

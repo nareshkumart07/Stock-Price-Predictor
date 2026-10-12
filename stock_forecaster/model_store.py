@@ -9,6 +9,9 @@ from stock_forecaster.schemas import EvaluationSummary, RegressionMetrics, Train
 from stock_forecaster.training_service import build_model, train_model
 
 
+ARTIFACT_FORMAT_VERSION = 2  # Train-only scaler; reject older leaked evaluations.
+
+
 def _safe_ticker_name(ticker: str) -> str:
     return "".join(ch if ch.isalnum() else "_" for ch in ticker.upper())
 
@@ -28,6 +31,7 @@ def save_artifact(
     run_config,
 ) -> None:
     payload = {
+        "format_version": ARTIFACT_FORMAT_VERSION,
         "ticker": ticker,
         "model_state_dict": model.state_dict(),
         "scaler": scaler,
@@ -56,6 +60,8 @@ def load_artifact(ticker: str, config: ModelConfig) -> Optional[TrainingArtifact
         return None
 
     payload = torch.load(artifact_path, map_location="cpu")
+    if payload.get("format_version") != ARTIFACT_FORMAT_VERSION:
+        return None
     model = build_model(config)
     model.load_state_dict(payload["model_state_dict"])
 
